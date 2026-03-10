@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="VibeCheck — AI-powered music player that reads your emotions and plays the perfect soundtrack.">
+    <title>VibeCheck — Emotion-Based Music Player</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+</head>
+<body>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         BACKGROUND ANIMATED BLOBS
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div class="bg-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         MAIN APP CONTAINER
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div class="app-container">
+
+        <!-- ── HEADER ──────────────────────────────────────────────── -->
+        <header class="app-header">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 40 40" fill="none">
+                        <circle cx="20" cy="20" r="18" stroke="url(#logoGrad)" stroke-width="3"/>
+                        <path d="M16 12 L16 28 L28 20 Z" fill="url(#logoGrad)"/>
+                        <defs>
+                            <linearGradient id="logoGrad" x1="0" y1="0" x2="40" y2="40">
+                                <stop offset="0%" stop-color="#a855f7"/>
+                                <stop offset="100%" stop-color="#06b6d4"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <h1>VibeCheck</h1>
+            </div>
+            <div class="header-context" id="contextBadge">
+                <span class="context-pill" id="emotionPill">😐 Neutral</span>
+                <span class="context-pill" id="weatherPill">☀️ --</span>
+                <span class="context-pill" id="timePill">🕐 --</span>
+            </div>
+        </header>
+
+        <!-- ── MAIN CONTENT AREA ───────────────────────────────────── -->
+        <main class="main-content">
+
+            <!-- ── PLAYER CARD ─────────────────────────────────────── -->
+            <section class="player-card glass" id="playerCard">
+                <div class="album-art-wrap">
+                    <div class="album-art" id="albumArt">
+                        <div class="album-placeholder">
+                            <svg viewBox="0 0 80 80" fill="none">
+                                <circle cx="40" cy="40" r="36" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>
+                                <circle cx="40" cy="40" r="12" fill="rgba(255,255,255,0.1)"/>
+                                <circle cx="40" cy="40" r="4" fill="rgba(168,85,247,0.6)"/>
+                            </svg>
+                        </div>
+                        <img id="albumImage" src="" alt="Album Art" style="display:none;">
+                    </div>
+                    <div class="vinyl-disc" id="vinylDisc"></div>
+                </div>
+
+                <div class="song-info">
+                    <div class="song-title-row">
+                        <h2 class="song-title" id="songTitle">Ready to Vibe</h2>
+                        <button class="like-btn" id="likeBtn" title="Like this song" style="display:none;">
+                            <svg viewBox="0 0 24 24" class="heart-icon outline" id="heartOutline"><path fill="currentColor" d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/></svg>
+                            <svg viewBox="0 0 24 24" class="heart-icon filled" id="heartFilled" style="display:none;"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        </button>
+                    </div>
+                    <p class="song-artist" id="songArtist">Tap the button below to start</p>
+                </div>
+
+                <div class="progress-bar-wrap">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-times">
+                        <span id="currentTime">0:00</span>
+                        <span id="totalTime">0:00</span>
+                    </div>
+                </div>
+
+                <div class="player-controls">
+                    <button class="ctrl-btn" id="prevBtn" title="Previous" disabled>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+                    </button>
+                    <button class="ctrl-btn play-btn" id="playPauseBtn" title="Play">
+                        <svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"><path d="M8 5v14l11-7z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor" id="pauseIcon" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    </button>
+                    <button class="ctrl-btn" id="nextBtn" title="Next">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                    </button>
+                </div>
+
+                <div class="volume-wrap">
+                    <svg class="vol-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+                    <input type="range" min="0" max="100" value="70" class="volume-slider" id="volumeSlider">
+                </div>
+            </section>
+
+            <!-- ── QUEUE PANEL ─────────────────────────────────────── -->
+            <section class="queue-panel glass" id="queuePanel">
+                <div class="queue-header">
+                    <h3>Up Next</h3>
+                    <span class="queue-count" id="queueCount">0 songs</span>
+                </div>
+                <ul class="queue-list" id="queueList">
+                    <li class="queue-empty">
+                        <p>Your playlist will appear here after a Vibe Check ✨</p>
+                    </li>
+                </ul>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         VIBE CHECK FLOATING ACTION BUTTON
+    ═══════════════════════════════════════════════════════════════════ -->
+    <button class="vibe-check-fab" id="vibeCheckBtn" title="Start a Vibe Check">
+        <span class="fab-pulse"></span>
+        <span class="fab-icon">🎭</span>
+        <span class="fab-label">Vibe Check</span>
+    </button>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         VIBE CHECK MODAL
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal glass" id="vibeModal">
+            <button class="modal-close" id="modalClose">&times;</button>
+            <h2 class="modal-title">🎭 Vibe Check</h2>
+            <p class="modal-subtitle">Let AI read your mood and create the perfect playlist</p>
+
+            <!-- Language selector -->
+            <div class="language-selector">
+                <label for="langSelect">🌐 Language</label>
+                <select id="langSelect" class="lang-dropdown">
+                    <option value="mix">🎶 Mix (All Languages)</option>
+                    <option value="english">🇬🇧 English</option>
+                    <option value="hindi">🇮🇳 Hindi</option>
+                    <option value="tamil">🇮🇳 Tamil</option>
+                    <option value="telugu">🇮🇳 Telugu</option>
+                    <option value="kannada">🇮🇳 Kannada</option>
+                    <option value="malayalam">🇮🇳 Malayalam</option>
+                    <option value="bengali">🇮🇳 Bengali</option>
+                    <option value="punjabi">🇮🇳 Punjabi</option>
+                    <option value="marathi">🇮🇳 Marathi</option>
+                    <option value="gujarati">🇮🇳 Gujarati</option>
+                </select>
+            </div>
+
+            <!-- Two options -->
+            <div class="modal-options">
+                <button class="option-card glass" id="optCamera">
+                    <div class="option-icon">📸</div>
+                    <h3>Live Camera</h3>
+                    <p>5-second scan with real-time emotion overlay</p>
+                </button>
+                <button class="option-card glass" id="optUpload">
+                    <div class="option-icon">🖼️</div>
+                    <h3>Upload Photo</h3>
+                    <p>Upload a face photo for instant analysis</p>
+                </button>
+            </div>
+
+            <!-- Camera view (hidden initially) -->
+            <div class="camera-view" id="cameraView" style="display:none;">
+                <div class="camera-feed-wrap">
+                    <video id="cameraFeed" autoplay playsinline></video>
+                    <canvas id="cameraCanvas" style="display:none;"></canvas>
+                    <div class="emotion-overlay" id="emotionOverlay">Scanning...</div>
+                    <div class="scan-progress">
+                        <div class="scan-bar" id="scanBar"></div>
+                    </div>
+                </div>
+                <button class="cancel-scan-btn" id="cancelScan">Cancel Scan</button>
+            </div>
+
+            <!-- Upload view (hidden initially) -->
+            <div class="upload-view" id="uploadView" style="display:none;">
+                <label class="upload-dropzone" id="dropzone" for="fileInput">
+                    <div class="drop-icon">📂</div>
+                    <p>Drag & drop a photo or <span class="browse-link">browse</span></p>
+                    <input type="file" id="fileInput" accept="image/*" hidden>
+                </label>
+                <div class="upload-preview" id="uploadPreview" style="display:none;">
+                    <img id="previewImage" src="" alt="Preview">
+                    <div class="emotion-overlay" id="uploadEmotionOverlay">Analyzing...</div>
+                </div>
+            </div>
+
+            <!-- Loading state -->
+            <div class="modal-loading" id="modalLoading" style="display:none;">
+                <div class="loader-ring"></div>
+                <p id="loadingText">Analyzing your vibe...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         TOAST NOTIFICATIONS
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         VIBE CHECK PROMPT BANNER
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div class="vibe-prompt-banner" id="vibePromptBanner">
+        <div class="prompt-content">
+            <span class="prompt-icon">🎭</span>
+            <div class="prompt-text">
+                <strong>Mood changed?</strong>
+                <p>Tap to re-scan for fresh recommendations</p>
+            </div>
+        </div>
+        <button class="prompt-close" id="promptClose">&times;</button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         HIDDEN YOUTUBE PLAYER
+    ═══════════════════════════════════════════════════════════════════ -->
+    <div id="ytPlayerWrap" style="position:fixed;bottom:-300px;left:-300px;width:280px;height:180px;opacity:0;pointer-events:none;z-index:-1;">
+        <div id="ytPlayer"></div>
+    </div>
+
+    <!-- YouTube IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+
+    <!-- App Script -->
+    <script src="{{ url_for('static', filename='script.js') }}?v=3"></script>
+</body>
+</html>
