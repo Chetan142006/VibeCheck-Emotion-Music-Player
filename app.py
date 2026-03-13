@@ -70,6 +70,9 @@ except ImportError:
     DEEPFACE_AVAILABLE = False
     print("[WARN] DeepFace not installed — emotion detection will be simulated.")
 
+# Load Haar Cascade from cv2 for faster face detection
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
 # ── Load environment variables ───────────────────────────────────────────────
 load_dotenv()
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
@@ -404,74 +407,57 @@ def index():
     return render_template("index.html")
 
 
-def preprocess_image(img):
-    """
-    Preprocess the image for better face/emotion detection:
-    1. Ensure minimum size (scale up small images)
-    2. Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
-       for better performance in low-light / uneven lighting
-    """
-    h, w = img.shape[:2]
 
-    # Scale up if image is too small — DeepFace works best at ≥ 480px height
-    if h < 480:
-        scale = 480 / h
-        img = cv2.resize(img, (int(w * scale), 480), interpolation=cv2.INTER_CUBIC)
-
-    # Convert to LAB colour space and apply CLAHE on the L (lightness) channel
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    l_channel, a_channel, b_channel = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    l_channel = clahe.apply(l_channel)
-    lab = cv2.merge([l_channel, a_channel, b_channel])
-    img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-
-    return img
 
 
 def detect_emotion_deepface(img):
     """
-    Two-pass emotion detection strategy:
-      Pass 1 — Use 'retinaface' backend with enforce_detection=True (most accurate)
-      Pass 2 — Fallback to 'opencv' backend with enforce_detection=True
-      Pass 3 — Last resort: 'opencv' with enforce_detection=False (may return neutral)
+    Emotion detection strategy mimicking the custom 'emotion_detector.py':
+    1. Grayscale the image and use Haar Cascade to find the face bounds.
+    2. Crop the image to the face bounds.
+    3. Run DeepFace analysis on the cropped face with enforce_detection=False.
+    If no face is explicitly found by the cascade, fallback to passing the full 
+    image to DeepFace with enforce_detection=False.
     Returns (dominant_emotion, scores_dict, confidence_flag)
     """
-    backends_to_try = [
-        {"detector_backend": "retinaface", "enforce_detection": True},
-        {"detector_backend": "opencv",     "enforce_detection": True},
-        {"detector_backend": "opencv",     "enforce_detection": False},
-    ]
+    try:
+        # Step 1: Detect Face via Haar Cascades
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+        
+        target_img = img # Default to full image if no cascade face is found
+        is_low_confidence = True
 
-    for i, cfg in enumerate(backends_to_try):
-        try:
-            result = DeepFace.analyze(
-                img,
-                actions=["emotion"],
-                enforce_detection=cfg["enforce_detection"],
-                detector_backend=cfg["detector_backend"],
-            )
-            if isinstance(result, list):
-                result = result[0]
+        if len(faces) > 0:
+            # Step 2: Crop to largest face found
+            (x, y, w, h) = faces[0]  # Take the first prominent face
+            target_img = img[y:y+h, x:x+w]
+            is_low_confidence = False # Haar found a face, higher confidence
+            print(f"[EmotionDetect] Face found via Haar Cascade at x:{x} y:{y} w:{w} h:{h}")
 
-            dominant = result.get("dominant_emotion", "neutral")
-            scores = result.get("emotion", {})
+        # Step 3: DeepFace Pass on cropped/full image
+        result = DeepFace.analyze(
+            target_img, 
+            actions=['emotion'], 
+            enforce_detection=False, 
+            silent=True
+        )
 
-            is_low_confidence = (not cfg["enforce_detection"])  # Pass 3 = low confidence
+        if isinstance(result, list):
+            result = result[0]
 
-            print(f"[EmotionDetect] Pass {i+1} ({cfg['detector_backend']}, "
-                  f"enforce={cfg['enforce_detection']}): "
-                  f"dominant={dominant}, scores={scores}")
+        dominant = result.get("dominant_emotion", "neutral")
+        raw_scores = result.get("emotion", {})
+        
+        # Convert numpy float32 to standard float for JSON serialization
+        scores = {k: float(v) for k, v in raw_scores.items()}
 
-            return dominant, scores, is_low_confidence
+        print(f"[EmotionDetect] Dominant: {dominant}, Scores: {scores}")
+        return dominant, scores, is_low_confidence
 
-        except Exception as e:
-            print(f"[EmotionDetect] Pass {i+1} ({cfg['detector_backend']}) failed: {e}")
-            continue
-
-    # All passes failed — return neutral with low confidence
-    print("[EmotionDetect] All passes failed, returning neutral (low confidence)")
-    return "neutral", {"neutral": 100.0}, True
+    except Exception as e:
+        print(f"[EmotionDetect] Failed: {e}")
+        return "neutral", {"neutral": 100.0}, True
 
 
 @app.route("/api/detect-emotion", methods=["POST"])
@@ -504,9 +490,6 @@ def detect_emotion():
             sim_emotion = random.choice(emotions)
             return jsonify({"emotion": sim_emotion, "scores": {sim_emotion: 95.0}, "low_confidence": False})
 
-        # Preprocess image for better detection
-        img = preprocess_image(img)
-        print(f"[EmotionDetect] Preprocessed image size: {img.shape}")
 
         # Run two-pass DeepFace analysis
         dominant, scores, low_confidence = detect_emotion_deepface(img)
@@ -530,6 +513,17 @@ def weather():
     """
     lat = request.args.get("lat", "")
     lon = request.args.get("lon", "")
+
+    if not lat or not lon:
+        try:
+            # Fallback to IP geolocation if client location is missing
+            ip_resp = http_requests.get("http://ip-api.com/json/", timeout=5)
+            ip_data = ip_resp.json()
+            if ip_data.get("status") == "success":
+                lat = ip_data.get("lat")
+                lon = ip_data.get("lon")
+        except Exception as e:
+            print(f"[WARN] IP-based location failed: {e}")
 
     if not lat or not lon:
         return jsonify({"main": "Clear", "description": "unknown", "temp": 25.0, "city": "Unknown"})
