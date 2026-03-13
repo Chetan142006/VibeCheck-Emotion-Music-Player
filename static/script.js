@@ -173,10 +173,18 @@ function onPlayerStateChange(event) {
 }
 
 function onPlayerError(event) {
-    console.warn("[YT] Player error:", event.data);
-    showToast("Playback error — skipping to next track", "error");
-    // Try next song
-    setTimeout(playNext, 1000);
+    console.warn("[YT] Player error code:", event.data);
+    let msg = "Playback error";
+    
+    // Map YouTube error codes to helpful messages
+    if (event.data === 2) msg = "Invalid video ID";
+    else if (event.data === 5) msg = "Browser/Player error";
+    else if (event.data === 100) msg = "Video not found / removed";
+    else if (event.data === 101 || event.data === 150) msg = "Embed restricted by artist";
+
+    showToast(`${msg} — skipping track`, "error");
+    // Try next song after a short delay
+    setTimeout(playNext, 1500);
 }
 
 // ═══════════════════════════════════════════════════════════════════

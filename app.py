@@ -27,6 +27,10 @@ import requests as http_requests
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 
+# --- Recommendation History (to avoid repetition) ---
+RECOMMENDATION_HISTORY = []
+MAX_HISTORY = 50
+
 LIKED_SONGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "liked_songs.json")
 
 def load_liked_songs():
@@ -270,7 +274,7 @@ def clamp(val, lo=0.0, hi=1.0):
 #  LAST.FM FETCHER
 # ==============================================================================
 
-def fetch_lastfm_tracks(tags: list, limit: int = 10) -> list:
+def fetch_lastfm_tracks(tags: list, limit: int = 40) -> list:
     """
     Fetch top tracks from Last.fm for given genre tags.
     Returns list of "Song - Artist" strings.
@@ -278,7 +282,7 @@ def fetch_lastfm_tracks(tags: list, limit: int = 10) -> list:
     if not LASTFM_API_KEY or LASTFM_API_KEY.startswith("your_"):
         return []
 
-    tracks = []
+    all_tracks = []
     for tag in tags:
         try:
             resp = http_requests.get("http://ws.audioscrobbler.com/2.0/", params={
@@ -293,10 +297,13 @@ def fetch_lastfm_tracks(tags: list, limit: int = 10) -> list:
                 name = t.get("name", "")
                 artist = t.get("artist", {}).get("name", "")
                 if name and artist:
-                    tracks.append(f"{name} - {artist}")
+                    all_tracks.append(f"{name} - {artist}")
         except Exception as e:
             print(f"[WARN] Last.fm fetch failed for tag '{tag}': {e}")
-    return tracks
+    
+    # Shuffle all fetched tracks to provide variety
+    random.shuffle(all_tracks)
+    return all_tracks
 
 # ==============================================================================
 #  RECOMMENDATION ENGINE
@@ -367,29 +374,53 @@ def build_playlist(emotion: str, weather_main: str, language: str = "mix") -> li
             tags.update(lg["low_valence"][:1])
 
     # ── Fetch from Last.fm ───────────────────────────────────────────────
-    api_songs = fetch_lastfm_tracks(list(tags), limit=5)
+    # Fetch more than needed to allow for filtering and variety
+    api_songs = fetch_lastfm_tracks(list(tags), limit=40)
     random.shuffle(api_songs)
 
     # ── Merge: liked first, safe next, API last, deduplicate, cap at 7 ──
     seen = set()
     final = []
     
+    # Global recently played filter
+    global RECOMMENDATION_HISTORY
+    
     # helper to add song
-    def add_song(s):
+    def add_song(s, prioritize_history=False):
         key = s.lower().strip()
         if key not in seen:
+            # Check history if it's not a liked song (we always allow those)
+            if not prioritize_history and key in RECOMMENDATION_HISTORY:
+                # If we have enough variety, skip. Otherwise, allow it as fallback.
+                if len(final) >= 7: return
+
             seen.add(key)
             final.append(s)
+            
+            # Update history
+            if key not in RECOMMENDATION_HISTORY:
+                RECOMMENDATION_HISTORY.append(key)
+                if len(RECOMMENDATION_HISTORY) > MAX_HISTORY:
+                    RECOMMENDATION_HISTORY.pop(0)
 
-    for s in liked_matching: add_song(s)
-    for s in safe: add_song(s)
-    for s in api_songs: add_song(s)
+    # 1. Liked songs (Always prioritize)
+    for s in liked_matching: add_song(s, prioritize_history=True)
+    
+    # 2. API Songs (Variety)
+    for s in api_songs: 
+        if len(final) >= 7: break
+        add_song(s)
+        
+    # 3. Safe fallback songs (Stability)
+    for s in safe: 
+        if len(final) >= 7: break
+        add_song(s)
 
-    # If still < 7, pad with more safe songs from any language
+    # If still < 7, pad with more safe songs from any language (even if in history)
     if len(final) < 7:
         for em_songs in SAFE_SONGS.get(emotion, {}).values():
             for s in em_songs:
-                add_song(s)
+                add_song(s, prioritize_history=True)
                 if len(final) >= 7:
                     break
             if len(final) >= 7:
@@ -648,15 +679,25 @@ def youtube_search():
         if not video_ids:
             # Fallback: try watch?v= pattern
             video_ids = re.findall(r'watch\?v=([a-zA-Z0-9_-]{11})', html)
+            
+        if not video_ids:
+            # Alternative JSON pattern for some layouts
+            video_ids = re.findall(r'videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"', html)
 
         if video_ids:
+            # Filter out common non-song IDs if possible (simplified)
             video_id = video_ids[0]
+            
             # Try to extract video title
             title = q
             try:
+                # More robust title extraction
                 title_match = re.search(r'"title":\{"runs":\[\{"text":"(.*?)"\}\]', html)
+                if not title_match:
+                    title_match = re.search(r'"accessibility":\{"accessibilityData":\{"label":"(.*?) by ', html)
+                
                 if title_match:
-                    title = title_match.group(1)
+                    title = title_match.group(1).encode('utf-8').decode('unicode_escape', 'ignore')
             except:
                 pass
             
@@ -681,7 +722,7 @@ def youtube_search():
 # ==============================================================================
 #  MAIN
 # ==============================================================================
-
+    
 if __name__ == "__main__":
     print("=" * 60)
     print("  VibeCheck — Emotion-Based Music Player")
