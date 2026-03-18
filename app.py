@@ -719,14 +719,21 @@ def get_likes():
 def youtube_search():
     """
     Search YouTube Music for a track matching the query string.
-    Uses ytmusicapi to guarantee fetching exact original songs.
+    Uses strict 2-pass validation to prevent ytmusicapi hallucinations.
     """
-    q = request.args.get("q", "")
-    if not q:
+    import re
+    
+    q_raw = request.args.get("q", "")
+    if not q_raw:
         return jsonify({"error": "No query provided"}), 400
 
     # Strip hyphens: YouTube treats them as an exclusion operator (e.g. "- Artist")
-    q = q.replace("-", " ")
+    q = q_raw.replace("-", " ")
+    
+    # Extract the requested song title (before the hyphen if possible)
+    req_title = q_raw.split("-")[0].strip() if "-" in q_raw else q_raw
+    req_title_clean = re.sub(r'[^\w\s]', '', req_title.lower()).strip()
+    req_words = set(req_title_clean.split())
 
     try:
         try:
@@ -735,30 +742,60 @@ def youtube_search():
             return jsonify({"error": "ytmusicapi library not installed"}), 500
             
         ytmusic = YTMusic()
-        # We explicitly search for 'songs' to only get official audio
-        results = ytmusic.search(query=q, filter="songs", limit=5)
         
-        if not results:
-             return jsonify({"error": "No suitable song videos found"}), 404
+        best_match = None
 
-        top_ids = []
-        for r in results:
-            vid = r.get("videoId")
-            if vid and vid not in top_ids:
-                top_ids.append(vid)
+        # PASS 1: Strict Audio Search
+        results_songs = ytmusic.search(query=q, filter="songs", limit=15)
+        for r in results_songs:
+            r_title = re.sub(r'[^\w\s]', '', r.get('title', '').lower()).strip()
+            
+            # Direct subtitle match or heavy word intersection
+            if req_title_clean in r_title or r_title in req_title_clean:
+                best_match = r
+                break
+                
+            r_words = set(r_title.split())
+            if req_words and req_words.intersection(r_words):
+                overlap = len(req_words.intersection(r_words)) / len(req_words)
+                if overlap >= 0.8:  # 80% word match threshold
+                    best_match = r
+                    break
 
-        if not top_ids:
-            return jsonify({"error": "No suitable song videos found"}), 404
+        # PASS 2: Official Video Fallback (Unfiltered)
+        if not best_match:
+            results_unfiltered = ytmusic.search(query=q, limit=5)
+            for r in results_unfiltered:
+                r_type = r.get('resultType', '')
+                if r_type in ['song', 'video']:
+                    r_title = re.sub(r'[^\w\s]', '', r.get('title', '').lower()).strip()
+                    r_words = set(r_title.split())
+                    if req_words and req_words.intersection(r_words):
+                        best_match = r
+                        break
+            
+            # Desperation fallback
+            if not best_match and results_unfiltered:
+                for r in results_unfiltered:
+                    if r.get('resultType') in ['song', 'video']:
+                        best_match = r
+                        break
 
-        first_res = results[0]
-        title = first_res.get("title", "Unknown Track")
+        if not best_match:
+             return jsonify({"error": "No suitable song or video found"}), 404
+
+        vid = best_match.get("videoId")
+        if not vid:
+            return jsonify({"error": "No valid video ID found"}), 404
+
+        title = best_match.get("title", "Unknown Track")
 
         return jsonify({
-            "videoId": top_ids[0],
-            "videoIds": top_ids,
+            "videoId": vid,
+            "videoIds": [vid],
             "title": title,
-            "thumbnail": f"https://i.ytimg.com/vi/{top_ids[0]}/hqdefault.jpg",
-            "duration": first_res.get("duration", "")
+            "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+            "duration": best_match.get("duration", "")
         })
 
     except Exception as e:
