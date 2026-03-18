@@ -718,125 +718,48 @@ def get_likes():
 @app.route("/api/youtube-search", methods=["GET"])
 def youtube_search():
     """
-    Search YouTube for a video ID matching the query string.
-    Uses direct HTTP request to YouTube search.
-    Strictly filters out movies, trailers, and non-song content.
+    Search YouTube Music for a track matching the query string.
+    Uses ytmusicapi to guarantee fetching exact original songs.
     """
     q = request.args.get("q", "")
     if not q:
         return jsonify({"error": "No query provided"}), 400
 
     try:
-        # Search YouTube via the HTML search page
-        search_url = "https://www.youtube.com/results"
-        # Prioritize official video/audio to fulfill user request 
-        # while using fallback for stability
-        params = {"search_query": q + " official audio"}
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-        resp = http_requests.get(search_url, params=params, headers=headers, timeout=8)
-        html = resp.text
-
-        # Extract segments that likely contain individual video info
-        # Using a more comprehensive regex to catch various YouTube JSON patterns
-        video_segments = re.findall(r'videoRenderer":\{(.*?)\}', html)
-        if not video_segments:
-             # Fallback to a broader search if JSON pattern changed
-             video_segments = re.findall(r'\{"videoId":"([a-zA-Z0-9_-]{11})".*?"title":\{"runs":\[\{"text":"(.*?)"\}\]', html)
+        try:
+            from ytmusicapi import YTMusic
+        except ImportError:
+            return jsonify({"error": "ytmusicapi library not installed"}), 500
+            
+        ytmusic = YTMusic()
+        # We explicitly search for 'songs' to only get official audio
+        results = ytmusic.search(query=q, filter="songs", limit=5)
         
-        candidates = []
-        blacklist = [
-            "full movie", "trailer", "teaser", "promo", "reaction", 
-            "interview", "making of", "behind the scenes", "preview",
-            "full film", "episode", "part 1", "part 2", "review",
-            "scene", "clip", "dialogue", "story", "fact", "news"
-        ]
+        if not results:
+             return jsonify({"error": "No suitable song videos found"}), 404
 
-        for seg in video_segments:
-            vid = ""
-            title = ""
+        top_ids = []
+        for r in results:
+            vid = r.get("videoId")
+            if vid and vid not in top_ids:
+                top_ids.append(vid)
 
-            if isinstance(seg, tuple):
-                vid, title = seg
-            else:
-                # Extract video ID
-                id_match = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', seg)
-                if not id_match: continue
-                vid = id_match.group(1)
-
-                # Extract Title - trying multiple patterns in order of priority
-                title_patterns = [
-                    r'"title":\{"runs":\[\{"text":"(.*?)"\}\]',
-                    r'"title":\{"simpleText":"(.*?)"\}',
-                    r'"label":"(.*?)"',
-                    r'"text":"(.*?)"'
-                ]
-                for p in title_patterns:
-                    title_match = re.search(p, seg)
-                    if title_match:
-                        title = title_match.group(1)
-                        # Remove common JSON/HTML escapings
-                        title = title.replace('\\u0026', '&').replace('&amp;', '&')
-                        break
-
-            if not vid: continue
-            
-            # If title is still empty, try to get it from the surrounding text if possible
-            # or just fallback to the query but mark it as suspicious
-            if not title:
-                title = "Unknown Track"
-            
-            # Clean up title (handle unicode escapes)
-            try:
-                # Handle double escapes often found in YT JSON
-                title = title.replace('\\\\', '\\')
-                title = title.encode('utf-8').decode('unicode_escape', 'ignore')
-            except:
-                pass
-            
-            # Check blacklist
-            is_blocked = False
-            title_lower = title.lower()
-            for word in blacklist:
-                if word in title_lower:
-                    is_blocked = True
-                    break
-            
-            # Additional check: If title is empty and the query looked like a movie, block it
-            if not title_lower or title_lower == "unknown track":
-                q_lower = q.lower()
-                if "movie" in q_lower or "film" in q_lower:
-                    is_blocked = True
-
-            if not is_blocked:
-                candidates.append({"id": vid, "title": title})
-
-        if candidates:
-            # Filter duplicates
-            seen_ids = []
-            final_candidates = []
-            for c in candidates:
-                if c["id"] not in seen_ids:
-                    seen_ids.append(c["id"])
-                    final_candidates.append(c)
-            
-            # Return top results
-            top_ids = [c["id"] for c in final_candidates[:5]]
-            
-            return jsonify({
-                "videoId": top_ids[0],
-                "videoIds": top_ids,
-                "title": final_candidates[0]["title"],
-                "thumbnail": f"https://i.ytimg.com/vi/{top_ids[0]}/hqdefault.jpg",
-                "duration": "",
-            })
-        else:
+        if not top_ids:
             return jsonify({"error": "No suitable song videos found"}), 404
 
+        first_res = results[0]
+        title = first_res.get("title", "Unknown Track")
+
+        return jsonify({
+            "videoId": top_ids[0],
+            "videoIds": top_ids,
+            "title": title,
+            "thumbnail": f"https://i.ytimg.com/vi/{top_ids[0]}/hqdefault.jpg",
+            "duration": first_res.get("duration", "")
+        })
+
     except Exception as e:
-        print(f"[WARN] YouTube search failed: {e}")
+        print(f"[WARN] YouTube Music search failed: {e}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
