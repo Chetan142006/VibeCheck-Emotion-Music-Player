@@ -159,13 +159,11 @@ function onPlayerStateChange(event) {
             // Increment songs played counter
             state.songsPlayedSinceVibeCheck++;
 
-            // Show vibe check prompt every 2 songs
-            if (state.songsPlayedSinceVibeCheck % 2 === 0) {
+            // Every 3 songs played, show vibe check prompt and dynamically fetch 3 more songs
+            if (state.songsPlayedSinceVibeCheck % 3 === 0) {
                 showVibePrompt();
+                fetchMoreForQueue();
             }
-
-            // Always fetch more songs to keep the queue seamlessly expanding
-            fetchMoreForQueue();
 
             playNext();
             break;
@@ -708,9 +706,10 @@ async function fetchMoreForQueue() {
         });
         const rData = await rResp.json();
         if (rData.playlist) {
-            // Add songs that aren't already in the queue
+            // Add exactly 3 songs that aren't already in the queue
             let added = 0;
             for (const song of rData.playlist) {
+                if (added >= 3) break;
                 const isDuplicate = state.queue.some(s => 
                     s.song_string.toLowerCase() === song.song_string.toLowerCase()
                 );
