@@ -725,6 +725,9 @@ def youtube_search():
     if not q:
         return jsonify({"error": "No query provided"}), 400
 
+    # Strip hyphens: YouTube treats them as an exclusion operator (e.g. "- Artist")
+    q = q.replace("-", " ")
+
     try:
         try:
             from ytmusicapi import YTMusic

@@ -706,11 +706,14 @@ async function fetchMoreForQueue() {
         });
         const rData = await rResp.json();
         if (rData.playlist) {
-            // Add exactly 3 songs that aren't already in the queue
+            // Add exactly 3 songs that aren't already in the upcoming/recent queue
             let added = 0;
             for (const song of rData.playlist) {
                 if (added >= 3) break;
-                const isDuplicate = state.queue.some(s => 
+                
+                // Only prevent duplicates from the most recent 15 songs to allow natural infinite looping
+                const baseQueue = state.queue.slice(-15);
+                const isDuplicate = baseQueue.some(s => 
                     s.song_string.toLowerCase() === song.song_string.toLowerCase()
                 );
                 if (!isDuplicate) {
