@@ -1,1 +1,18 @@
-{}
+{
+    "pranam pothunna - yuvan shankar raja": {
+        "song": "Pranam Pothunna - Yuvan Shankar Raja",
+        "emotion": "angry",
+        "weather": "Clear",
+        "time_of_day": "night",
+        "language": "telugu",
+        "timestamp": "2026-03-13T19:43:38.778760"
+    },
+    "vizhi moodi - karthik": {
+        "song": "Vizhi Moodi - Karthik",
+        "emotion": "neutral",
+        "weather": "Clear",
+        "time_of_day": "morning",
+        "language": "telugu",
+        "timestamp": "2026-03-14T09:49:08.406233"
+    }
+}

@@ -6,3 +6,4 @@ requests
 youtube-search-python
 tf-keras
 retina-face
+spotipy

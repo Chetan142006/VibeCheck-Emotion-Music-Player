@@ -27,7 +27,9 @@ const state = {
         emotion: "neutral",
         weather: "Clear",
         language: "mix"
-    }
+    },
+    candidateVideoIds: [], // Top search results for current song
+    retryVideoIndex: 0     // Current retry index for candidateVideoIds
 };
 
 // ── DOM REFERENCES ──────────────────────────────────────────────────
@@ -70,6 +72,7 @@ const dom = {
     optCamera: $("#optCamera"),
     optUpload: $("#optUpload"),
     langSelect: $("#langSelect"),
+    weatherSelect: $("#weatherSelect"),
     // Camera
     cameraView: $("#cameraView"),
     cameraFeed: $("#cameraFeed"),
@@ -175,12 +178,26 @@ function onPlayerStateChange(event) {
 function onPlayerError(event) {
     console.warn("[YT] Player error code:", event.data);
     let msg = "Playback error";
+    let isEmbedError = false;
     
     // Map YouTube error codes to helpful messages
     if (event.data === 2) msg = "Invalid video ID";
     else if (event.data === 5) msg = "Browser/Player error";
     else if (event.data === 100) msg = "Video not found / removed";
-    else if (event.data === 101 || event.data === 150) msg = "Embed restricted by artist";
+    else if (event.data === 101 || event.data === 150) {
+        msg = "Embed restricted by artist";
+        isEmbedError = true;
+    }
+
+    // Retry logic if we have candidates
+    if (isEmbedError && state.candidateVideoIds.length > state.retryVideoIndex + 1) {
+        state.retryVideoIndex++;
+        const nextId = state.candidateVideoIds[state.retryVideoIndex];
+        console.log(`[YT] Retrying with candidate ${state.retryVideoIndex}: ${nextId}`);
+        showToast(`🔄 Embed restricted — trying fallback...`, "info");
+        state.ytPlayer.loadVideoById(nextId);
+        return;
+    }
 
     showToast(`${msg} — skipping track`, "error");
     // Try next song after a short delay
@@ -227,27 +244,36 @@ function playPrev() {
 async function playSongAtIndex(index) {
     if (index < 0 || index >= state.queue.length) return;
     state.currentIndex = index;
-    const songStr = state.queue[index];
+    const songObj = state.queue[index];
 
-    // Parse "Song - Artist"
-    const parts = songStr.split(" - ");
-    const title = parts[0] || songStr;
-    const artist = parts.slice(1).join(" - ") || "";
+    // Use song object properties
+    const title = songObj.title || "Unknown Song";
+    const artist = songObj.artist || "Unknown Artist";
+    const songString = songObj.song_string || `${title} - ${artist}`;
+    const coverUrl = songObj.cover || "";
 
     dom.songTitle.textContent = title;
     dom.songArtist.textContent = artist || "Unknown Artist";
     updateQueueHighlight();
     updateNavButtons();
-    checkLikeStatus(songStr);
+    checkLikeStatus(songString);
 
     // Search YouTube for video ID
     try {
-        const resp = await fetch(`/api/youtube-search?q=${encodeURIComponent(songStr)}`);
+        const resp = await fetch(`/api/youtube-search?q=${encodeURIComponent(songString)}`);
         const data = await resp.json();
 
         if (data.videoId && state.ytReady) {
-            // Update thumbnail as album art
-            if (data.thumbnail) {
+            // Update candidate IDs for retry logic
+            state.candidateVideoIds = data.videoIds || [data.videoId];
+            state.retryVideoIndex = 0;
+
+            // Update thumbnail as album art (Prefer Spotify cover if available)
+            if (coverUrl) {
+                dom.albumImage.src = coverUrl;
+                dom.albumImage.style.display = "block";
+                dom.albumPlaceholder.style.display = "none";
+            } else if (data.thumbnail) {
                 dom.albumImage.src = data.thumbnail;
                 dom.albumImage.style.display = "block";
                 dom.albumPlaceholder.style.display = "none";
@@ -324,9 +350,8 @@ function renderQueue() {
 
     dom.queueCount.textContent = `${state.queue.length} songs`;
     dom.queueList.innerHTML = state.queue.map((song, i) => {
-        const parts = song.split(" - ");
-        const title = parts[0] || song;
-        const artist = parts.slice(1).join(" - ") || "";
+        const title = song.title || "Unknown Track";
+        const artist = song.artist || "Unknown Artist";
         const isActive = i === state.currentIndex;
         return `
             <li class="queue-item ${isActive ? "active" : ""}" data-index="${i}" onclick="playSongAtIndex(${i})">
@@ -574,31 +599,43 @@ async function fetchRecommendations(emotion) {
     dom.loadingText.textContent = "Reading the vibes...";
 
     const language = dom.langSelect.value;
+    const weatherOverride = dom.weatherSelect ? dom.weatherSelect.value : "auto";
+
+    let weatherMain = "Clear";
 
     try {
-        // Step 1: Get geolocation
-        dom.loadingText.textContent = "Getting your location...";
-        let lat = "", lon = "";
-        try {
-            const pos = await getGeolocation();
-            lat = pos.coords.latitude;
-            lon = pos.coords.longitude;
-        } catch {
-            console.warn("[Geo] Location unavailable, using defaults");
-        }
-
-        // Step 2: Fetch weather
-        dom.loadingText.textContent = "Checking the weather...";
-        let weatherMain = "Clear";
-        try {
-            const wResp = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
-            const wData = await wResp.json();
-            weatherMain = wData.main || "Clear";
-            // Update weather pill
-            dom.weatherPill.textContent = `${getWeatherEmoji(weatherMain)} ${weatherMain}`;
+        if (weatherOverride !== "auto") {
+            // Use manual override
+            weatherMain = weatherOverride;
+            dom.loadingText.textContent = `Applying manual weather: ${weatherMain}...`;
+            await new Promise(r => setTimeout(r, 500)); // slight pause for UX
+            
+            dom.weatherPill.textContent = `${getWeatherEmoji(weatherMain)} ${weatherMain} (Test)`;
             dom.weatherPill.classList.add("active");
-        } catch {
-            console.warn("[Weather] Failed, using default");
+        } else {
+            // Step 1: Get geolocation
+            dom.loadingText.textContent = "Getting your location...";
+            let lat = "", lon = "";
+            try {
+                const pos = await getGeolocation();
+                lat = pos.coords.latitude;
+                lon = pos.coords.longitude;
+            } catch {
+                console.warn("[Geo] Location unavailable, using defaults");
+            }
+
+            // Step 2: Fetch weather
+            dom.loadingText.textContent = "Checking the weather...";
+            try {
+                const wResp = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+                const wData = await wResp.json();
+                weatherMain = wData.main || "Clear";
+                // Update weather pill
+                dom.weatherPill.textContent = `${getWeatherEmoji(weatherMain)} ${weatherMain}`;
+                dom.weatherPill.classList.add("active");
+            } catch {
+                console.warn("[Weather] Failed, using default");
+            }
         }
 
         // Step 3: Fetch recommendations
@@ -661,11 +698,8 @@ async function fetchMoreForQueue() {
     try {
         let { emotion, weather, language } = state.currentContext;
 
-        // After 2 songs, switch to a mix of languages to introduce variety
-        // This fulfills the requirement to prefer Regional first, then recommend other languages!
-        if (language !== "mix" && state.songsPlayedSinceVibeCheck >= 2) {
-            language = "mix";
-        }
+        // FIXED: Don't force language switch to "mix" - respect user selection!
+        // (Removed previous logic that forced mix after 2 songs)
 
         const rResp = await fetch("/api/recommend", {
             method: "POST",
@@ -677,7 +711,10 @@ async function fetchMoreForQueue() {
             // Add songs that aren't already in the queue
             let added = 0;
             for (const song of rData.playlist) {
-                if (!state.queue.includes(song)) {
+                const isDuplicate = state.queue.some(s => 
+                    s.song_string.toLowerCase() === song.song_string.toLowerCase()
+                );
+                if (!isDuplicate) {
                     state.queue.push(song);
                     added++;
                 }
@@ -724,7 +761,7 @@ function getWeatherEmoji(main) {
     const map = {
         clear: "☀️", clouds: "☁️", rain: "🌧️", drizzle: "🌦️",
         thunderstorm: "⛈️", snow: "❄️", mist: "🌫️", fog: "🌫️",
-        haze: "🌫️", smoke: "💨",
+        haze: "🌫️", smoke: "💨", party: "🎉",
     };
     return map[main?.toLowerCase()] || "☀️";
 }
@@ -753,13 +790,13 @@ async function fetchLikes() {
     } catch (e) { }
 }
 
-function checkLikeStatus(song) {
-    if (!song) {
+function checkLikeStatus(songId) {
+    if (!songId) {
         dom.likeBtn.style.display = "none";
         return;
     }
     dom.likeBtn.style.display = "flex";
-    const key = song.toLowerCase().trim();
+    const key = songId.toLowerCase().trim();
     const isLiked = state.likes.includes(key);
 
     dom.heartOutline.style.display = isLiked ? "none" : "block";
@@ -769,8 +806,9 @@ function checkLikeStatus(song) {
 async function toggleLike() {
     if (state.currentIndex < 0 || state.currentIndex >= state.queue.length) return;
 
-    const song = state.queue[state.currentIndex];
-    const key = song.toLowerCase().trim();
+    const songObj = state.queue[state.currentIndex];
+    const songString = songObj.song_string || `${songObj.title} - ${songObj.artist}`;
+    const key = songString.toLowerCase().trim();
     const isLiked = state.likes.includes(key);
 
     try {
@@ -778,19 +816,19 @@ async function toggleLike() {
             // Unlike
             await fetch("/api/like", {
                 method: "DELETE",
-                body: JSON.stringify({ song })
+                body: JSON.stringify({ song: songString })
             });
             state.likes = state.likes.filter(k => k !== key);
-            checkLikeStatus(song);
+            checkLikeStatus(songString);
             showToast("Removed from liked songs");
         } else {
             // Like
             await fetch("/api/like", {
                 method: "POST",
-                body: JSON.stringify({ song, context: state.currentContext })
+                body: JSON.stringify({ song: songString, context: state.currentContext })
             });
             state.likes.push(key);
-            checkLikeStatus(song);
+            checkLikeStatus(songString);
             showToast("Added to liked songs ✨", "success");
         }
     } catch (e) {

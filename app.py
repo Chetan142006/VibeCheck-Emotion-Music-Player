@@ -24,6 +24,8 @@ import json
 import cv2
 import numpy as np
 import requests as http_requests
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 
@@ -80,7 +82,24 @@ face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fronta
 # ── Load environment variables ───────────────────────────────────────────────
 load_dotenv()
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
-LASTFM_API_KEY = os.getenv("LASTFM_API_KEY", "")
+SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID", "")
+SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET", "")
+
+# --- Spotify Initialization ---
+sp = None
+if SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET:
+    try:
+        auth_manager = SpotifyClientCredentials(client_id=SPOTIPY_CLIENT_ID, client_secret=SPOTIPY_CLIENT_SECRET)
+        sp = spotipy.Spotify(auth_manager=auth_manager)
+    except Exception as e:
+        print(f"[WARN] Spotify initialization failed: {e}")
+
+# --- Western Blocklist (Regional Firewall) ---
+# WESTERN_BLOCKLIST = [
+#     "Justin Bieber", "Coldplay", "Taylor Swift", "Ed Sheeran", "Dua Lipa",
+#     "Ariana Grande", "The Weeknd", "Post Malone", "Katy Perry", "Drake",
+#     "Beyoncé", "Billie Eilish", "Shawn Mendes", "Maroon 5", "Imagine Dragons"
+# ]
 
 
 app = Flask(__name__)
@@ -91,88 +110,88 @@ app = Flask(__name__)
 
 SAFE_SONGS = {
     "happy": {
-        "english":   ["Happy - Pharrell Williams", "Walking on Sunshine - Katrina and the Waves", "Uptown Funk - Bruno Mars"],
-        "hindi":     ["Badtameez Dil - Benny Dayal", "Gallan Goodiyaan - Shankar Mahadevan", "London Thumakda - Labh Janjua"],
-        "tamil":     ["Vaathi Coming - Anirudh Ravichander", "Why This Kolaveri Di - Dhanush", "Aaluma Doluma - Anirudh"],
+        "english":   ["Happy - Pharrell Williams", "Can't Stop The Feeling - Justin Timberlake", "24K Magic - Bruno Mars"],
+        "hindi":     ["Badtameez Dil - Benny Dayal", "Gallan Goodiyaan - Shankar Mahadevan", "Kala Chashma - Badshah"],
+        "tamil":     ["Vaathi Coming - Anirudh Ravichander", "Enjoy Enjaami - Dhee", "Aaluma Doluma - Anirudh"],
         "telugu":    ["Butta Bomma - Armaan Malik", "Ramuloo Ramulaa - Anurag Kulkarni", "Saami Saami - Mounika Yadav"],
-        "kannada":   ["Belageddu - Kishan", "Bombe Helutaithe - Shankar Mahadevan", "Rangitaranga Title Track"],
-        "malayalam": ["Jimikki Kammal - Vineeth Sreenivasan", "Entammede Jimikki Kammal", "Appangal Embadum - Vineeth"],
-        "bengali":   ["Ami Je Tomar - Arijit Singh", "Bolte Bolte Cholte Cholte - Imran", "Mon Majhi Re - Arijit Singh"],
-        "punjabi":   ["Amplifier - Imran Khan", "Proper Patola - Diljit Dosanjh", "Lahore - Guru Randhawa"],
+        "kannada":   ["Belageddu - Kishan", "Bombe Helutaithe - Shankar Mahadevan", "Karabuu - Dhruva Sarja"],
+        "malayalam": ["Jimikki Kammal - Vineeth Sreenivasan", "Kudukku - Vineeth Sreenivasan", "Appangal Embadum - Vineeth"],
+        "bengali":   ["Mon Majhi Re - Arijit Singh", "Bolte Bolte Cholte Cholte - Imran", "O My Love - Amanush"],
+        "punjabi":   ["Proper Patola - Diljit Dosanjh", "Lahore - Guru Randhawa", "High Rated Gabru - Guru Randhawa"],
         "marathi":   ["Zingaat - Ajay Atul", "Apsara Aali - Bela Shende", "Wajle Ki Bara - Ajay Atul"],
         "gujarati":  ["Sajan Sajan - Sachin Jigar", "Ruda Ne Gamo - Sachin Jigar", "Love Ni Bhavai Title Track"],
     },
     "sad": {
-        "english":   ["Someone Like You - Adele", "Fix You - Coldplay", "Let Her Go - Passenger"],
+        "english":   ["Someone Like You - Adele", "Someone You Loved - Lewis Capaldi", "Let Her Go - Passenger"],
         "hindi":     ["Tujhe Kitna Chahne Lage - Arijit Singh", "Channa Mereya - Arijit Singh", "Agar Tum Saath Ho - Arijit Singh"],
         "tamil":     ["Ennai Konjam Matri - Sid Sriram", "Kannazhaga - Dhanush", "Idhazhin Oram - Ajesh Ashok"],
-        "telugu":    ["Nee Kannu Neeli Samudram - Sid Sriram", "Ye Maaya Chesave Title Song", "Emai Poyave - Sid Sriram"],
-        "kannada":   ["Baarisu Kannada Dindimava", "Mamaraviye - Sonu Nigam", "Onde Ondu Sari - Sonu Nigam"],
+        "telugu":    ["Nee Kannu Neeli Samudram - Sid Sriram", "Emai Poyave - Sid Sriram", "Undiporaadhey - Sid Sriram"],
+        "kannada":   ["Mamaraviye - Sonu Nigam", "Onde Ondu Sari - Sonu Nigam", "Neene Bari Neene - Sonu Nigam"],
         "malayalam": ["Aaromale - Alphons Joseph", "Munbe Vaa - Shreya Ghoshal", "Kannum Kannum Kollaiyadithaal"],
         "bengali":   ["Bojhena Shey Bojhena - Arijit Singh", "Tumi Jakhan - Arijit Singh", "Ei Raat Tomar Amar"],
-        "punjabi":   ["Tu Jaane Na - Atif Aslam", "Kiven Mukhre - Nusrat Fateh Ali Khan", "Heer - Javed Ali"],
+        "punjabi":   ["Tu Jaane Na - Atif Aslam", "Kallar - G Khan", "Heer - Javed Ali"],
         "marathi":   ["Tula Pahate Re - Atul Gogavale", "Dev Manus - Ajay Atul", "Meerajya Title Track"],
         "gujarati":  ["Radhey Krishna - Jignesh Kaviraj", "Tari Aankh No Afini - Jignesh Kaviraj", "Tu Heer Meri"],
     },
     "angry": {
-        "english":   ["In the End - Linkin Park", "Killing in the Name - Rage Against the Machine", "Numb - Linkin Park"],
-        "hindi":     ["Kar Har Maidaan Fateh - Sukhwinder Singh", "Sultan Title Track - Sukhwinder Singh", "Dangal Title Track - Daler Mehndi"],
+        "english":   ["Believer - Imagine Dragons", "Numb - Linkin Park", "Monster - Skillet"],
+        "hindi":     ["Kar Har Maidaan Fateh - सुखविंदर सिंह", "Sultan Title Track - सुखविंदर सिंह", "Dangal Title Track - दलेर मेहंदी"],
         "tamil":     ["Aalaporan Tamizhan - AR Rahman", "Verithanam - AR Rahman", "Mersal Arasan - AR Rahman"],
         "telugu":    ["Jai Lava Kusa Title Song - Bobby", "Saahore Bahubali - MM Keeravani", "RRR Naatu Naatu - Rahul Sipligunj"],
         "kannada":   ["Hebbuli Title Track - Supriya Lohith", "Tagaru Title Track", "Roberrt Mass Title Song"],
-        "malayalam": ["Pulimurugan Title Song", "Maari Mass Theme", "Lucifer Title Track"],
-        "bengali":   ["Pagla Hawar Tore - James", "Tor Premete - James", "Shono - Artcell"],
+        "malayalam": ["Maari Mass Theme", "Lucifer Title Track", "Aavesham Theme"],
+        "bengali":   ["Tor Premete - James", "Shono - Artcell", "Oniket Prantor - Artcell"],
         "punjabi":   ["Jatt Da Muqabla - Sidhu Moose Wala", "Legend - Sidhu Moose Wala", "So High - Sidhu Moose Wala"],
         "marathi":   ["Aala Re Aala Simmba - Adarsh Shinde", "Mi Hai Koli - Adarsh Shinde", "Zhakaas - Ajay Atul"],
         "gujarati":  ["Gujju Rocks - Jignesh Kaviraj", "Power Star - Jignesh Kaviraj", "Thakar Nu Gaam"],
     },
     "fear": {
-        "english":   ["Creep - Radiohead", "Everybody Hurts - R.E.M.", "Mad World - Gary Jules"],
-        "hindi":     ["Phir Bhi Tumko Chaahungi - Asha Bhosle", "Ilahi - Arijit Singh", "Ae Dil Hai Mushkil - Arijit Singh"],
+        "english":   ["Mad World - Gary Jules", "Burn - Ellie Goulding", "Nightmare - Halsey"],
+        "hindi":     ["Phir Bhi Tumko Chaahungi - आशा भोसले", "Ilahi - अरिजीत सिंह", "Ae Dil Hai Mushkil - अरिजीत सिंह"],
         "tamil":     ["Nee Partha Vizhigal - Shreya Ghoshal", "Thalli Pogathey - Sid Sriram", "Oru Naal Koothu"],
         "telugu":    ["Emo Emo - Sid Sriram", "Yemaindo Teliyadu Naaku", "Nuvvostanante Nenoddantana Song"],
-        "kannada":   ["Preethse Antha - Shankar Nag", "Devru Kotta Thangi", "Neenirade - Rachita Ram"],
+        "kannada":   ["Neenirade - Rachita Ram", "Hrudayat Vaje Something", "Nooru Neenu"],
         "malayalam": ["Mizhiyil Ninnum - KJ Yesudas", "Hridayathin Niramayi", "Ormayundo Ee Mugham"],
-        "bengali":   ["Tumi Robe Nirobe - Rabindranath", "Ektarare Tuning - Anupam Roy", "Tomake Chai - Anupam Roy"],
-        "punjabi":   ["Tera Ban Jaunga - Akhil Sachdeva", "Kalli Kalli - Jass Manak", "Filhall - B Praak"],
-        "marathi":   ["Yad Lagla - Ajay Atul", "Ek Aslyane - Ajay Atul", "Deva Shree Ganesha"],
-        "gujarati":  ["Dil No Dukh - Jignesh Kaviraj", "Jiv Thi Valayi - Jignesh Kaviraj", "Vaali - Sachin Jigar"],
+        "bengali":   ["Ektarare Tuning - Anupam Roy", "Tomake Chai - Anupam Roy", "Amake Amar Moto Thakte Dao"],
+        "punjabi":   ["Tera Ban Jaunga - अख़िल सचदेवा", "Kalli Kalli - जस्स मानक", "Filhall - बी प्राक"],
+        "marathi":   ["Yad Lagla - अजय अतुल", "Ek Aslyane - अजय अतुल", "Deva Shree Ganesha"],
+        "gujarati":  ["Dil No Dukh - जिग्नेश कविराज", "Jiv Thi Valayi - जिग्नेश कविराज", "Vaali - सचिन जिगर"],
     },
     "disgust": {
-        "english":   ["Smells Like Teen Spirit - Nirvana", "Basket Case - Green Day", "Boulevard of Broken Dreams - Green Day"],
-        "hindi":     ["Apna Time Aayega - Ranveer Singh", "Swag Se Swagat - Vishal Dadlani", "Aunty Ji - Yo Yo Honey Singh"],
+        "english":   ["Boulevard of Broken Dreams - Green Day", "Holiday - Green Day", "Teenagers - My Chemical Romance"],
+        "hindi":     ["Apna Time Aayega - Ranveer Singh", "Swag Se Swagat - विशाल ददलानी", "Aunty Ji - यो यो हनी सिंह"],
         "tamil":     ["Surviva - Anirudh Ravichander", "Kutti Story - Anirudh Ravichander", "Vaadi Pulla Vaadi"],
         "telugu":    ["Mind Block - Blaaze", "Buttabomma Remix", "Vachaadayyo Saami"],
         "kannada":   ["Tagaru Banthu Tagaru", "KGF Salaam Rocky Bhai", "Avane Srimannarayana Theme"],
         "malayalam": ["Premam Theme - Rajesh Murugesan", "Ayyappanum Koshiyum Theme", "Jallikattu Theme"],
-        "bengali":   ["Lift Karade - Pritam", "Ekla Chalo Re - Amitabh", "Boshonto Eshe Gechhe"],
+        "bengali":   ["Boshonto Eshe Gechhe", "Ekla Chalo Re - एमिताब", "Lungi Dance - Bengali"],
         "punjabi":   ["No Love - Shubh", "We Rollin - Shubh", "Elevated - Shubh"],
-        "marathi":   ["Aika Dajiba - Ajay Atul", "Kombdi Palali - Ajay Atul", "Sairat Zaala Ji"],
-        "gujarati":  ["Chhel Chhabili - Geeta Rabari", "Rasiya Tari Radha", "Mogal Taro Aarti"],
+        "marathi":   ["Aika Dajiba - अजय अतुल", "Kombdi Palali - अजय अतुल", "Sairat Zaala Ji"],
+        "gujarati":  ["Chhel Chhabili - गीता रबारी", "Rasiya Tari Radha", "Mogal Taro Aarti"],
     },
     "surprise": {
-        "english":   ["Don't Stop Me Now - Queen", "Mr. Brightside - The Killers", "Bohemian Rhapsody - Queen"],
-        "hindi":     ["Chaiyya Chaiyya - Sukhwinder Singh", "Malhari - Vishal Dadlani", "Dil Se Re - AR Rahman"],
+        "english":   ["Blinding Lights - The Weeknd", "Starboy - The Weeknd", "Flowers - Miley Cyrus"],
+        "hindi":     ["Dil Se Re - AR Rahman (2000 Remake)", "Malhari - विशाल ददलानी", "Chaiyya Chaiyya - Remix"],
         "tamil":     ["Rowdy Baby - Dhanush", "Arabic Kuthu - Anirudh", "Jolly O Gymkhana - Anirudh"],
         "telugu":    ["Oo Antava - Indravathi Chauhan", "Ramulo Ramula - Anurag Kulkarni", "Seeti Maar - Devi Sri Prasad"],
-        "kannada":   ["Navagraha - Kichcha Sudeep", "KGF Mother Theme", "Yuvarathnaa Title Track"],
-        "malayalam": ["Kalakkatha - Rahul Raj", "Lailakame - Ezra", "Karimizhi Kuruvikal"],
-        "bengali":   ["Subha Hone Na De - Pritam", "Balam Pichkari Bengali Version", "Tujhe Dekha Toh"],
+        "kannada":   ["Yuvarathnaa Title Track", "Tagaru Title Track", "James Title Song"],
+        "malayalam": ["Karimizhi Kuruvikal", "Lailakame - Ezra", "Kalakkatha - राहुल राज"],
+        "bengali":   ["Subha Hone Na De - प्रीतम", "Tujhe Dekha Toh - Bengali", "Beshore - Anupam Roy"],
         "punjabi":   ["Obsessed - Riar Saab", "Brown Munde - AP Dhillon", "Excuses - AP Dhillon"],
-        "marathi":   ["Bring It On - Ajay Atul", "Pinga - Ajay Atul", "Malhari Marathi Version"],
-        "gujarati":  ["Dholida - Sachin Jigar", "Shubh Aarambh - Sachin Jigar", "Nagada Sang Dhol Baje"],
+        "marathi":   ["Bring It On - अजय अतुल", "Pinga - अजय अतुल", "Zingaat"],
+        "gujarati":  ["Dholida - सचिन जिगर", "Shubh Aarambh - सचिन जिगर", "Nagada Sang Dhol Baje"],
     },
     "neutral": {
         "english":   ["Blinding Lights - The Weeknd", "Levitating - Dua Lipa", "Shape of You - Ed Sheeran"],
-        "hindi":     ["Tum Hi Ho - Arijit Singh", "Raabta Title Song - Arijit Singh", "Khairiyat - Arijit Singh"],
+        "hindi":     ["Tum Hi Ho - अरिजीत सिंह", "Raabta Title Song - अरिजीत सिंह", "Khairiyat - अरिजीत सिंह"],
         "tamil":     ["Nenjame - Anirudh Ravichander", "Kanave Kanave - Anirudh", "Ilamai Thirumbi - Sid Sriram"],
         "telugu":    ["Samajavaragamana - Sid Sriram", "Inkem Inkem - Sid Sriram", "Choosi Chudangane - Sid Sriram"],
-        "kannada":   ["Hrudayat Vaje Something - Sonu Nigam", "Manasaare - Shankar Mahadevan", "Baare Baare - Armaan Malik"],
-        "malayalam": ["Manikya Malaraya Poovi - Vineeth", "Minungum - KS Harisankar", "Chundari Penne - KJ Yesudas"],
-        "bengali":   ["Tumi Amar Prothom - Arijit Singh", "Poran Jaye Joliya Re", "Aamar Mon Bhore - Somlata"],
-        "punjabi":   ["Excuses - AP Dhillon", "Lover - Diljit Dosanjh", "Softly - Karan Aujla"],
-        "marathi":   ["Ved Lavlay - Avadhoot Gupte", "Tula Pahate Re - Ajay Atul", "Mala Ved Lagale"],
-        "gujarati":  ["Udne Sapne - Sachin Jigar", "Khelaiya Nonstop Garba", "Sanedo Sanedo - Sachin Jigar"],
+        "kannada":   ["Manasaare - शंकर महादेवन", "Baare Baare - अरमान मलिक", "Hrudayat Vaje Something"],
+        "malayalam": ["Manikya Malaraya Poovi - विनीत", "Minungum - KS हरिशंकर", "Chundari Penne - KJ येसुदास"],
+        "bengali":   ["Tumi Amar Prothom - अरिजीत सिंह", "Poran Jaye Joliya Re", "Aamar Mon Bhore - सोमलता"],
+        "punjabi":   ["Excuses - AP Dhillon", "Lover - दिलजीत दोसांझ", "Softly - करण औजला"],
+        "marathi":   ["Ved Lavlay - अवधूत गुप्ते", "Tula Pahate Re - अजय अतुल", "Mala Ved Lagale"],
+        "gujarati":  ["Udne Sapne - सचिन जिगर", "Sanedo Sanedo - सचिन जिगर", "Valam Aavo Ne"],
     },
 }
 
@@ -190,48 +209,49 @@ EMOTION_PARAMS = {
     "neutral":  {"valence": 0.55, "energy": 0.50},
 }
 
-# Genre tags for Last.fm — language-specific
+# Genre seeds for Spotify — language-specific
+# Note: Spotify has a strict list of seed genres.
 LANGUAGE_GENRES = {
-    "english":   {"high_energy": ["pop", "dance", "electronic", "edm"],
-                  "low_energy":  ["acoustic", "lo-fi", "indie", "chill"],
-                  "high_valence": ["pop", "funk", "soul"],
-                  "low_valence":  ["blues", "sad", "melancholy"]},
-    "hindi":     {"high_energy": ["bollywood", "bollywood dance", "indian pop", "hindi remix"],
-                  "low_energy":  ["bollywood sad", "ghazal", "sufi", "bollywood unplugged"],
-                  "high_valence": ["bollywood", "indian pop", "filmi"],
-                  "low_valence":  ["ghazal", "bollywood sad", "sufi"]},
-    "tamil":     {"high_energy": ["kollywood", "tamil", "tamil pop", "kuthu"],
-                  "low_energy":  ["tamil melody", "carnatic", "tamil unplugged"],
-                  "high_valence": ["kollywood", "tamil pop"],
-                  "low_valence":  ["tamil melody", "carnatic"]},
-    "telugu":    {"high_energy": ["tollywood", "telugu", "telugu pop", "telugu mass"],
-                  "low_energy":  ["telugu melody", "telugu unplugged"],
-                  "high_valence": ["tollywood", "telugu pop"],
-                  "low_valence":  ["telugu melody", "telugu sad"]},
-    "kannada":   {"high_energy": ["kannada", "sandalwood", "kannada pop"],
-                  "low_energy":  ["kannada melody", "kannada unplugged"],
-                  "high_valence": ["kannada", "sandalwood"],
-                  "low_valence":  ["kannada melody"]},
-    "malayalam": {"high_energy": ["malayalam", "mollywood", "malayalam pop"],
-                  "low_energy":  ["malayalam melody", "malayalam unplugged"],
-                  "high_valence": ["mollywood", "malayalam pop"],
-                  "low_valence":  ["malayalam melody"]},
-    "bengali":   {"high_energy": ["bengali", "tollywood bengali", "bangla pop"],
-                  "low_energy":  ["rabindra sangeet", "bengali melody", "baul"],
-                  "high_valence": ["bengali pop", "bangla rock"],
-                  "low_valence":  ["rabindra sangeet", "bengali sad"]},
-    "punjabi":   {"high_energy": ["punjabi", "bhangra", "punjabi pop", "punjabi hip hop"],
-                  "low_energy":  ["punjabi sad", "punjabi melody", "sufi punjabi"],
-                  "high_valence": ["bhangra", "punjabi pop"],
-                  "low_valence":  ["punjabi sad", "sufi punjabi"]},
-    "marathi":   {"high_energy": ["marathi", "marathi pop", "lavani"],
-                  "low_energy":  ["marathi melody", "marathi natya sangeet", "marathi unplugged"],
-                  "high_valence": ["marathi pop", "lavani"],
-                  "low_valence":  ["marathi natya sangeet", "marathi sad"]},
-    "gujarati":  {"high_energy": ["gujarati", "garba", "gujarati pop", "dandiya"],
-                  "low_energy":  ["gujarati melody", "gujarati unplugged"],
-                  "high_valence": ["garba", "dandiya", "gujarati pop"],
-                  "low_valence":  ["gujarati melody"]},
+    "english":   {"high_energy": ["pop", "dance", "rock"],
+                  "low_energy":  ["acoustic", "chill", "indie"],
+                  "high_valence": ["pop", "happy"],
+                  "low_valence":  ["blues", "sad"]},
+    "hindi":     {"high_energy": ["bollywood", "indian", "dance"],
+                  "low_energy":  ["bollywood", "indian", "acoustic"],
+                  "high_valence": ["bollywood", "indian"],
+                  "low_valence":  ["bollywood", "indian", "soul"]},
+    "tamil":     {"high_energy": ["indian", "dance", "tamil"],
+                  "low_energy":  ["indian", "acoustic", "tamil"],
+                  "high_valence": ["indian", "tamil"],
+                  "low_valence":  ["indian", "tamil"]},
+    "telugu":    {"high_energy": ["indian", "dance", "telugu"],
+                  "low_energy":  ["indian", "acoustic", "telugu"],
+                  "high_valence": ["indian", "telugu"],
+                  "low_valence":  ["indian", "telugu"]},
+    "kannada":   {"high_energy": ["indian", "dance"],
+                  "low_energy":  ["indian", "acoustic"],
+                  "high_valence": ["indian"],
+                  "low_valence":  ["indian"]},
+    "malayalam": {"high_energy": ["indian", "dance"],
+                  "low_energy":  ["indian", "acoustic"],
+                  "high_valence": ["indian"],
+                  "low_valence":  ["indian"]},
+    "bengali":   {"high_energy": ["indian", "dance"],
+                  "low_energy":  ["indian", "acoustic"],
+                  "high_valence": ["indian"],
+                  "low_valence":  ["indian"]},
+    "punjabi":   {"high_energy": ["indian", "hip-hop", "dance"],
+                  "low_energy":  ["indian", "acoustic"],
+                  "high_valence": ["indian", "pop"],
+                  "low_valence":  ["indian", "soul"]},
+    "marathi":   {"high_energy": ["indian", "dance"],
+                  "low_energy":  ["indian", "acoustic"],
+                  "high_valence": ["indian"],
+                  "low_valence":  ["indian"]},
+    "gujarati":  {"high_energy": ["indian", "dance"],
+                  "low_energy":  ["indian", "acoustic"],
+                  "high_valence": ["indian"],
+                  "low_valence":  ["indian"]},
 }
 
 # ==============================================================================
@@ -263,6 +283,8 @@ def get_weather_modifier(weather_main: str):
         "fog": -0.03,
         "haze": -0.03,
         "smoke": -0.05,
+        "dust": -0.05,
+        "party": 0.20, # Manual override for high energy/valence
     }
     return mapping.get(weather_main, 0.0)
 
@@ -271,39 +293,72 @@ def clamp(val, lo=0.0, hi=1.0):
     return max(lo, min(hi, val))
 
 # ==============================================================================
-#  LAST.FM FETCHER
+#  SPOTIFY FETCHER
 # ==============================================================================
 
-def fetch_lastfm_tracks(tags: list, limit: int = 40) -> list:
+def get_spotify_recommendations(em_params, language, genres, limit=20):
     """
-    Fetch top tracks from Last.fm for given genre tags.
-    Returns list of "Song - Artist" strings.
+    Fetch track recommendations from Spotify using 3D context.
+    Maps emotional parameters to target audio features.
     """
-    if not LASTFM_API_KEY or LASTFM_API_KEY.startswith("your_"):
+    if not sp:
         return []
 
-    all_tracks = []
-    for tag in tags:
-        try:
-            resp = http_requests.get("http://ws.audioscrobbler.com/2.0/", params={
-                "method": "tag.getTopTracks",
-                "tag": tag,
-                "api_key": LASTFM_API_KEY,
-                "format": "json",
-                "limit": limit,
-            }, timeout=5)
-            data = resp.json()
-            for t in data.get("tracks", {}).get("track", []):
-                name = t.get("name", "")
-                artist = t.get("artist", {}).get("name", "")
-                if name and artist:
-                    all_tracks.append(f"{name} - {artist}")
-        except Exception as e:
-            print(f"[WARN] Last.fm fetch failed for tag '{tag}': {e}")
+    # Map energy/valence to Spotify parameters
+    # em_params has {"valence": ..., "energy": ...}
+    target_valence = em_params["valence"]
+    target_energy = em_params["energy"]
     
-    # Shuffle all fetched tracks to provide variety
-    random.shuffle(all_tracks)
-    return all_tracks
+    # Advanced 3D Context mapping
+    target_acousticness = 0.5
+    if target_energy < 0.4: target_acousticness = 0.7  # Sad/Chill
+    if target_energy > 0.7: target_acousticness = 0.1  # Happy/Angry/Dance
+    
+    # Determine search query for language if not English
+    query = ""
+    if language != "english":
+        query = f"language:{language}" # or just name like "hindi"
+
+    try:
+        # Get available seed genres to filter our request
+        # seeds = sp.recommendation_genre_seeds()['genres']
+        # Validating genres against Spotify's set is safer but expensive
+        
+        recs = sp.recommendations(
+            seed_genres=genres[:5], # Spotify limit is 5
+            target_valence=target_valence,
+            target_energy=target_energy,
+            target_acousticness=target_acousticness,
+            limit=limit,
+            market="IN" if language != "english" else "US"
+        )
+        
+        final_tracks = []
+        for t in recs.get('tracks', []):
+            artist = t['artists'][0]['name']
+            track_name = t['name']
+            album_art = t['album']['images'][0]['url'] if t['album']['images'] else ""
+            
+            # --- Regional Firewall: Filter out Western artists in regional mode ---
+            if language != "english":
+                is_blocked = False
+                for b_artist in WESTERN_BLOCKLIST:
+                    if b_artist.lower() in artist.lower():
+                        is_blocked = True
+                        break
+                if is_blocked: continue
+
+            final_tracks.append({
+                "title": track_name,
+                "artist": artist,
+                "cover": album_art,
+                "song_string": f"{track_name} - {artist}"
+            })
+            
+        return final_tracks
+    except Exception as e:
+        print(f"[WARN] Spotify recommendation failed: {e}")
+        return []
 
 # ==============================================================================
 #  RECOMMENDATION ENGINE
@@ -311,10 +366,10 @@ def fetch_lastfm_tracks(tags: list, limit: int = 40) -> list:
 
 def build_playlist(emotion: str, weather_main: str, language: str = "mix") -> list:
     """
-    Build a 7-song playlist using the 3D Context Formula.
-    1. Start with safe fallback songs for the emotion + language.
-    2. Fetch from Last.fm using mood-mapped genre tags.
-    3. Merge, deduplicate, and return exactly 7.
+    Build a 7-song playlist using the 3D Context Formula with Spotify recommendations.
+    1. Start with safe fallback songs (mapped to objects).
+    2. Fetch from Spotify using 3D context (mood × time × weather).
+    3. Merge, deduplicate (by song string), and return exactly 7 objects.
     """
     emotion = emotion.lower()
     language = language.lower()
@@ -348,83 +403,93 @@ def build_playlist(emotion: str, weather_main: str, language: str = "mix") -> li
     
     for key, data in likes.items():
         if data.get("emotion") == emotion:
-            liked_matching.append(data["song"])
+            if language == "mix" or data.get("language") == language:
+                # Convert to object format
+                song_str = data["song"]
+                parts = song_str.split(" - ")
+                liked_matching.append({
+                    "title": parts[0] if len(parts) > 0 else song_str,
+                    "artist": parts[1] if len(parts) > 1 else "Unknown Artist",
+                    "cover": "", # Will get from YT search thumbnail on play if needed
+                    "song_string": song_str
+                })
             
-    # Shuffle and pick up to 3 liked songs
     random.shuffle(liked_matching)
     liked_matching = liked_matching[:3]
     
-    # ── Gather safe songs ────────────────────────────────────────────────
+    # ── Gather safe fallback songs ───────────────────────────────────────
     safe = []
     for lang in chosen_langs:
-        safe.extend(SAFE_SONGS.get(emotion, {}).get(lang, []))
+        for s in SAFE_SONGS.get(emotion, {}).get(lang, []):
+            parts = s.split(" - ")
+            safe.append({
+                "title": parts[0] if len(parts) > 0 else s,
+                "artist": parts[1] if len(parts) > 1 else "Unknown Artist",
+                "cover": "",
+                "song_string": s
+            })
     random.shuffle(safe)
 
-    # ── Pick genre tags for Last.fm ──────────────────────────────────────
-    tags = set()
+    # ── Pick genre seeds for Spotify ─────────────────────────────────────
+    genres = set()
     for lang in chosen_langs:
         lg = LANGUAGE_GENRES.get(lang, LANGUAGE_GENRES["english"])
         if energy >= 0.6:
-            tags.update(lg["high_energy"][:2])
+            genres.update(lg["high_energy"][:2])
         else:
-            tags.update(lg["low_energy"][:2])
+            genres.update(lg["low_energy"][:2])
         if valence >= 0.5:
-            tags.update(lg["high_valence"][:1])
+            genres.update(lg["high_valence"][:1])
         else:
-            tags.update(lg["low_valence"][:1])
+            genres.update(lg["low_valence"][:1])
 
-    # ── Fetch from Last.fm ───────────────────────────────────────────────
-    # Fetch more than needed to allow for filtering and variety
-    api_songs = fetch_lastfm_tracks(list(tags), limit=40)
+    # ── Fetch from Spotify ───────────────────────────────────────────────
+    api_songs = get_spotify_recommendations(
+        {"valence": valence, "energy": energy},
+        language,
+        list(genres),
+        limit=30
+    )
     random.shuffle(api_songs)
 
-    # ── Merge: liked first, safe next, API last, deduplicate, cap at 7 ──
+    # ── Merge and deduplicate ─────────────────────────────────────────────
     seen = set()
     final = []
     
-    # Global recently played filter
     global RECOMMENDATION_HISTORY
     
-    # helper to add song
-    def add_song(s, prioritize_history=False):
-        key = s.lower().strip()
+    def add_song(song_obj, prioritize_history=False):
+        key = song_obj["song_string"].lower().strip()
         if key not in seen:
-            # Check history if it's not a liked song (we always allow those)
             if not prioritize_history and key in RECOMMENDATION_HISTORY:
-                # If we have enough variety, skip. Otherwise, allow it as fallback.
                 if len(final) >= 7: return
 
             seen.add(key)
-            final.append(s)
+            final.append(song_obj)
             
-            # Update history
             if key not in RECOMMENDATION_HISTORY:
                 RECOMMENDATION_HISTORY.append(key)
                 if len(RECOMMENDATION_HISTORY) > MAX_HISTORY:
                     RECOMMENDATION_HISTORY.pop(0)
 
-    # 1. Liked songs (Always prioritize)
+    # 1. Liked songs
     for s in liked_matching: add_song(s, prioritize_history=True)
     
-    # 2. API Songs (Variety)
+    # 2. Spotify API Songs
     for s in api_songs: 
         if len(final) >= 7: break
         add_song(s)
         
-    # 3. Safe fallback songs (Stability)
+    # 3. Safe fallback
     for s in safe: 
         if len(final) >= 7: break
         add_song(s)
 
-    # If still < 7, pad with more safe songs from any language (even if in history)
+    # Pad if < 7
     if len(final) < 7:
-        for em_songs in SAFE_SONGS.get(emotion, {}).values():
-            for s in em_songs:
-                add_song(s, prioritize_history=True)
-                if len(final) >= 7:
-                    break
-            if len(final) >= 7:
-                break
+        for s in safe:
+            add_song(s, prioritize_history=True)
+            if len(final) >= 7: break
 
     return final[:7]
 
@@ -654,8 +719,8 @@ def get_likes():
 def youtube_search():
     """
     Search YouTube for a video ID matching the query string.
-    Uses direct HTTP request to YouTube search (no library dependency).
-    Returns: { "videoId": "dQw4w9WgXcQ", "title": "..." }
+    Uses direct HTTP request to YouTube search.
+    Strictly filters out movies, trailers, and non-song content.
     """
     q = request.args.get("q", "")
     if not q:
@@ -664,6 +729,8 @@ def youtube_search():
     try:
         # Search YouTube via the HTML search page
         search_url = "https://www.youtube.com/results"
+        # Prioritize official video/audio to fulfill user request 
+        # while using fallback for stability
         params = {"search_query": q + " official audio"}
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -672,46 +739,101 @@ def youtube_search():
         resp = http_requests.get(search_url, params=params, headers=headers, timeout=8)
         html = resp.text
 
-        # Extract video IDs from the page using regex
-        # YouTube embeds video data as JSON in the HTML — video IDs are 11 chars
-        video_ids = re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
+        # Extract segments that likely contain individual video info
+        # Using a more comprehensive regex to catch various YouTube JSON patterns
+        video_segments = re.findall(r'videoRenderer":\{(.*?)\}', html)
+        if not video_segments:
+             # Fallback to a broader search if JSON pattern changed
+             video_segments = re.findall(r'\{"videoId":"([a-zA-Z0-9_-]{11})".*?"title":\{"runs":\[\{"text":"(.*?)"\}\]', html)
+        
+        candidates = []
+        blacklist = [
+            "full movie", "trailer", "teaser", "promo", "reaction", 
+            "interview", "making of", "behind the scenes", "preview",
+            "full film", "episode", "part 1", "part 2", "review",
+            "scene", "clip", "dialogue", "story", "fact", "news"
+        ]
 
-        if not video_ids:
-            # Fallback: try watch?v= pattern
-            video_ids = re.findall(r'watch\?v=([a-zA-Z0-9_-]{11})', html)
-            
-        if not video_ids:
-            # Alternative JSON pattern for some layouts
-            video_ids = re.findall(r'videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"', html)
+        for seg in video_segments:
+            vid = ""
+            title = ""
 
-        if video_ids:
-            # Filter out common non-song IDs if possible (simplified)
-            video_id = video_ids[0]
+            if isinstance(seg, tuple):
+                vid, title = seg
+            else:
+                # Extract video ID
+                id_match = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', seg)
+                if not id_match: continue
+                vid = id_match.group(1)
+
+                # Extract Title - trying multiple patterns in order of priority
+                title_patterns = [
+                    r'"title":\{"runs":\[\{"text":"(.*?)"\}\]',
+                    r'"title":\{"simpleText":"(.*?)"\}',
+                    r'"label":"(.*?)"',
+                    r'"text":"(.*?)"'
+                ]
+                for p in title_patterns:
+                    title_match = re.search(p, seg)
+                    if title_match:
+                        title = title_match.group(1)
+                        # Remove common JSON/HTML escapings
+                        title = title.replace('\\u0026', '&').replace('&amp;', '&')
+                        break
+
+            if not vid: continue
             
-            # Try to extract video title
-            title = q
+            # If title is still empty, try to get it from the surrounding text if possible
+            # or just fallback to the query but mark it as suspicious
+            if not title:
+                title = "Unknown Track"
+            
+            # Clean up title (handle unicode escapes)
             try:
-                # More robust title extraction
-                title_match = re.search(r'"title":\{"runs":\[\{"text":"(.*?)"\}\]', html)
-                if not title_match:
-                    title_match = re.search(r'"accessibility":\{"accessibilityData":\{"label":"(.*?) by ', html)
-                
-                if title_match:
-                    title = title_match.group(1).encode('utf-8').decode('unicode_escape', 'ignore')
+                # Handle double escapes often found in YT JSON
+                title = title.replace('\\\\', '\\')
+                title = title.encode('utf-8').decode('unicode_escape', 'ignore')
             except:
                 pass
             
-            # Build thumbnail URL
-            thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+            # Check blacklist
+            is_blocked = False
+            title_lower = title.lower()
+            for word in blacklist:
+                if word in title_lower:
+                    is_blocked = True
+                    break
+            
+            # Additional check: If title is empty and the query looked like a movie, block it
+            if not title_lower or title_lower == "unknown track":
+                q_lower = q.lower()
+                if "movie" in q_lower or "film" in q_lower:
+                    is_blocked = True
 
+            if not is_blocked:
+                candidates.append({"id": vid, "title": title})
+
+        if candidates:
+            # Filter duplicates
+            seen_ids = []
+            final_candidates = []
+            for c in candidates:
+                if c["id"] not in seen_ids:
+                    seen_ids.append(c["id"])
+                    final_candidates.append(c)
+            
+            # Return top results
+            top_ids = [c["id"] for c in final_candidates[:5]]
+            
             return jsonify({
-                "videoId": video_id,
-                "title": title,
-                "thumbnail": thumbnail,
+                "videoId": top_ids[0],
+                "videoIds": top_ids,
+                "title": final_candidates[0]["title"],
+                "thumbnail": f"https://i.ytimg.com/vi/{top_ids[0]}/hqdefault.jpg",
                 "duration": "",
             })
         else:
-            return jsonify({"error": "No results found"}), 404
+            return jsonify({"error": "No suitable song videos found"}), 404
 
     except Exception as e:
         print(f"[WARN] YouTube search failed: {e}")

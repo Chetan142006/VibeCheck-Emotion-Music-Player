@@ -147,22 +147,31 @@
             <h2 class="modal-title">🎭 Vibe Check</h2>
             <p class="modal-subtitle">Let AI read your mood and create the perfect playlist</p>
 
-            <!-- Language selector -->
-            <div class="language-selector">
-                <label for="langSelect">🌐 Language</label>
-                <select id="langSelect" class="lang-dropdown">
-                    <option value="mix">🎶 Mix (All Languages)</option>
-                    <option value="english">🇬🇧 English</option>
-                    <option value="hindi">🇮🇳 Hindi</option>
-                    <option value="tamil">🇮🇳 Tamil</option>
-                    <option value="telugu">🇮🇳 Telugu</option>
-                    <option value="kannada">🇮🇳 Kannada</option>
-                    <option value="malayalam">🇮🇳 Malayalam</option>
-                    <option value="bengali">🇮🇳 Bengali</option>
-                    <option value="punjabi">🇮🇳 Punjabi</option>
-                    <option value="marathi">🇮🇳 Marathi</option>
-                    <option value="gujarati">🇮🇳 Gujarati</option>
-                </select>
+            <div class="settings-row" style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+                <!-- Language selector -->
+                <div class="language-selector" style="flex: 1;">
+                    <label for="langSelect">🌐 Language</label>
+                    <select id="langSelect" class="lang-dropdown" style="width: 100%;">
+                        <option value="mix">🎶 Mix (All)</option>
+                        <option value="english" selected>🇬🇧 English</option>
+                        <option value="hindi">🇮🇳 Hindi</option>
+                        <option value="tamil">🇮🇳 Tamil</option>
+                        <option value="telugu">🇮🇳 Telugu</option>
+                        <option value="punjabi">🇮🇳 Punjabi</option>
+                    </select>
+                </div>
+
+                <!-- Weather selector (Manual Override for Presentation) -->
+                <div class="weather-selector" style="flex: 1;">
+                    <label for="weatherSelect">🌤️ Weather (Test)</label>
+                    <select id="weatherSelect" class="lang-dropdown" style="width: 100%;">
+                        <option value="auto" selected>Live API (Auto)</option>
+                        <option value="Clear">☀️ Sunny / Clear</option>
+                        <option value="Rain">🌧️ Rainy</option>
+                        <option value="Snow">❄️ Winter / Snow</option>
+                        <option value="Party">🎉 Party Mode</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Two options -->
