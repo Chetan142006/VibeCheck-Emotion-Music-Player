@@ -1,6 +1,9 @@
 # Environment
 .env
 
+# Runtime cache
+.cache
+
 # Python
 __pycache__/
 *.py[cod]
