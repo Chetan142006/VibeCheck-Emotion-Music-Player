@@ -85,7 +85,7 @@ This project was built as a **Mini Project** for the paper:
 
 VibeCheck speaks **10 languages** — with curated song libraries for each:
 
-`English` · `Hindi` · `Tamil` · `Telugu` · `Kannada` · `Malayalam` · `Bengali` · `Punjabi` · `Marathi` · `Gujarati`
+`English` · `Hindi` · `Tamil` · `Telugu` · `Malayalam` · `Punjabi`
 
 > 🔒 **Regional Firewall**: When a regional language is selected, Western artists are filtered out to preserve local music integrity.
 
