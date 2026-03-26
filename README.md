@@ -232,7 +232,7 @@ Priority 3 → 🛡️  Curated safe fallbacks (always available)
 ## 👨‍💻 Author
 
 **Chetan Sai** — Mini Project, 2026  
-*B.Tech | Computer Science & Engineering*
+*B.Tech | Artificial Intelligence & Data Science*
 
 ---
 
