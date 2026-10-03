@@ -1,0 +1,10 @@
+flask
+python-dotenv
+deepface
+opencv-python-headless
+requests
+youtube-search-python
+tf-keras
+retina-face
+spotipy
+ytmusicapi
